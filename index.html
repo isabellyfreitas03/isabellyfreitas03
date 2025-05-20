@@ -1,0 +1,525 @@
+<!DOCTYPE html>
+<html lang="pt-br">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Caça Palavras - TI e Desenvolvimento</title>
+<style>
+  @import url('https://fonts.googleapis.com/css2?family=Roboto+Mono&display=swap');
+  body {
+    background: linear-gradient(135deg, #283e51, #485563);
+    margin: 0;
+    color: #e0e0e0;
+    font-family: 'Roboto Mono', monospace;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    min-height: 100vh;
+    padding: 2rem 1rem;
+  }
+  h1 {
+    color: #7efaff;
+    text-shadow: 0 0 8px #7efaff99;
+    margin-bottom: 0.2rem;
+  }
+  #game-container {
+    max-width: 620px;
+    width: 100%;
+    background: #152a3a;
+    border-radius: 18px;
+    box-shadow: 0 0 25px #45cfff88;
+    padding: 20px 15px 25px;
+    user-select: none;
+  }
+  #grid {
+    display: grid;
+    grid-template-columns: repeat(14, 2.5rem);
+    grid-template-rows: repeat(14, 2.5rem);
+    gap: 4px;
+    background: #0f1a26;
+    border-radius: 10px;
+    padding: 12px;
+    border: 3px solid #45cfffaa;
+    margin-bottom: 16px;
+  }
+  .cell {
+    background: #19324f;
+    color: #c7d8ee;
+    font-weight: 700;
+    font-size: 1.2rem;
+    text-align: center;
+    line-height: 2.3rem;
+    cursor: pointer;
+    user-select: none;
+    border-radius: 6px;
+    transition: background-color 0.3s ease, color 0.3s ease;
+  }
+  .cell.highlighted {
+    background: #7efaff;
+    color: #0c1b2a;
+  }
+  .cell.found {
+    background: #2ec4b6;
+    color: #082831;
+    font-weight: 800;
+    cursor: default;
+  }
+  #words-list {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 14px;
+    font-size: 1.1rem;
+    justify-content: center;
+    color: #a1d2dd;
+    max-width: 600px;
+    margin: 0 auto;
+  }
+  .word-item {
+    padding: 4px 14px;
+    background: #0b3a57;
+    border-radius: 12px;
+    text-transform: uppercase;
+    font-weight: 600;
+    letter-spacing: 1px;
+    box-shadow: 0 0 8px #45cfff88;
+    cursor: default;
+    transition: background-color 0.3s ease;
+  }
+  .word-item.found {
+    background: #2ec4b6;
+    color: #062e27;
+    box-shadow: 0 0 12px #2ec4b688;
+    text-decoration: line-through;
+  }
+  #message {
+    margin-top: 18px;
+    font-size: 1.2rem;
+    color: #7efaff;
+    font-weight: 600;
+    text-align: center;
+    min-height: 1.5rem;
+  }
+  @media (max-width: 480px) {
+    #grid {
+      grid-template-columns: repeat(12, 2.2rem);
+      grid-template-rows: repeat(12, 2.2rem);
+    }
+    .cell {
+      font-size: 1rem;
+      line-height: 2rem;
+      border-radius: 5px;
+    }
+    #words-list {
+      gap: 10px;
+      font-size: 0.9rem;
+    }
+  }
+</style>
+</head>
+<body>
+  <h1>Caça Palavras TI & Desenvolvimento</h1>
+  <div id="game-container" role="main" aria-label="Jogo de caça palavras de tecnologia e desenvolvimento">
+    <div id="grid" aria-label="Grade de letras para caça palavras" aria-live="polite"></div>
+    <div id="words-list" aria-label="Lista de palavras a encontrar"></div>
+    <div id="message" aria-live="assertive"></div>
+  </div>
+
+<script>
+  // Definitions
+  const GRID_SIZE = 14;
+  const words = [
+    'ALGORITMO',
+    'API',
+    'BACKEND',
+    'BANCO',
+    'BYTE',
+    'CACHE',
+    'CLASSE',
+    'CÓDIGO',
+    'COMPILADOR',
+    'DADOS',
+    'DEPLOY',
+    'DEBUG',
+    'FRONTEND',
+    'FRAMEWORK',
+    'FUNÇÃO',
+    'HOST',
+    'HTML',
+    'JAVA',
+    'JAVASCRIPT',
+    'NODE',
+    'OBJETO',
+    'PYTHON',
+    'REQUISIÇÃO',
+    'SCRIPT',
+    'SERVIDOR',
+    'SOFTWARE',
+    'SQL',
+    'STRING',
+    'SISTEMA',
+    'VARIÁVEL',
+    'WEB'
+  ];
+
+  // Helpers to generate grid
+  let grid = [];
+  let placedWords = [];
+
+  const gridElement = document.getElementById('grid');
+  const wordsListElement = document.getElementById('words-list');
+  const messageElement = document.getElementById('message');
+
+  // Coordinates directions (horizontal, vertical, diagonal)
+  const directions = [
+    { x: 1, y: 0 },   // right
+    { x: 0, y: 1 },   // down
+    { x: 1, y: 1 },   // diagonal down-right
+    { x: -1, y: 0 },  // left
+    { x: 0, y: -1 },  // up
+    { x: -1, y: -1 }, // diagonal up-left
+    { x: 1, y: -1 },  // diagonal up-right
+    { x: -1, y: 1 }   // diagonal down-left
+  ];
+
+  // Selected cells tracking
+  let isSelecting = false;
+  let selectedCells = [];
+  let firstSelectedCell = null;
+  let lastSelectedCell = null;
+
+  // Prepare grid with empty letters
+  function createEmptyGrid() {
+    grid = [];
+    for(let r = 0; r < GRID_SIZE; r++) {
+      let row = [];
+      for(let c = 0; c < GRID_SIZE; c++) {
+        row.push('');
+      }
+      grid.push(row);
+    }
+  }
+
+  // Check if word fits at position with direction
+  function canPlaceWord(word, row, col, dir) {
+    const len = word.length;
+    for(let i = 0; i < len; i++) {
+      const r = row + i * dir.y;
+      const c = col + i * dir.x;
+
+      if(r < 0 || r >= GRID_SIZE || c < 0 || c >= GRID_SIZE)
+        return false;
+
+      const currentLetter = grid[r][c];
+      if(currentLetter && currentLetter !== word[i]) {
+        return false;
+      }
+    }
+    return true;
+  }
+
+  // Place word on grid
+  function placeWord(word) {
+    const directionsShuffled = shuffle([...directions]);
+    for(const dir of directionsShuffled) {
+      for(let r = 0; r < GRID_SIZE; r++) {
+        for(let c = 0; c < GRID_SIZE; c++) {
+          if(canPlaceWord(word, r, c, dir)) {
+            for(let i = 0; i < word.length; i++) {
+              const rr = r + i * dir.y;
+              const cc = c + i * dir.x;
+              grid[rr][cc] = word[i];
+            }
+            placedWords.push({
+              word: word,
+              start: { r: r, c: c },
+              end: { r: r + (word.length-1) * dir.y, c: c + (word.length-1) * dir.x },
+              found: false
+            });
+            return true;
+          }
+        }
+      }
+    }
+    return false; // Could not place word
+  }
+
+  // Fill empty cells with random letters
+  function fillEmptyCells() {
+    const alphabet = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ';
+    for(let r = 0; r < GRID_SIZE; r++) {
+      for(let c = 0; c < GRID_SIZE; c++) {
+        if(!grid[r][c]) {
+          grid[r][c] = alphabet.charAt(Math.floor(Math.random() * alphabet.length));
+        }
+      }
+    }
+  }
+
+  // Shuffle helper
+  function shuffle(array) {
+    let currentIndex = array.length, randomIndex;
+    while(currentIndex !== 0) {
+      randomIndex = Math.floor(Math.random() * currentIndex);
+      currentIndex--;
+      [array[currentIndex], array[randomIndex]] = [array[randomIndex], array[currentIndex]];
+    }
+    return array;
+  }
+
+  // Build the grid DOM
+  function buildGrid() {
+    gridElement.innerHTML = '';
+    for(let r = 0; r < GRID_SIZE; r++) {
+      for(let c = 0; c < GRID_SIZE; c++) {
+        let cell = document.createElement('div');
+        cell.classList.add('cell');
+        cell.textContent = grid[r][c];
+        cell.dataset.row = r;
+        cell.dataset.col = c;
+        cell.setAttribute('tabindex', '0');
+        gridElement.appendChild(cell);
+      }
+    }
+  }
+
+  // Build words list DOM
+  function buildWordsList() {
+    wordsListElement.innerHTML = '';
+    placedWords.forEach(w => {
+      let el = document.createElement('div');
+      el.classList.add('word-item');
+      el.textContent = w.word;
+      el.id = `word-${w.word}`;
+      wordsListElement.appendChild(el);
+    });
+  }
+
+  // Utility: check if two points are on same line (direction)
+  function directionBetween(a, b) {
+    let dx = b.c - a.c;
+    let dy = b.r - a.r;
+    if(dx !== 0) dx = dx / Math.abs(dx);
+    if(dy !== 0) dy = dy / Math.abs(dy);
+    return { x: dx, y: dy };
+  }
+
+  // Get all cells between two points in direction
+  function getCellsBetween(a, b) {
+    let cells = [];
+    let dir = directionBetween(a, b);
+    let length = Math.max(Math.abs(b.c - a.c), Math.abs(b.r - a.r)) + 1;
+    for(let i = 0; i < length; i++) {
+      cells.push({r: a.r + i * dir.y, c: a.c + i * dir.x});
+    }
+    return cells;
+  }
+
+  // Check if selected cells form a valid word
+  function checkSelectedWord() {
+    if(selectedCells.length < 2) return null;
+
+    let start = selectedCells[0];
+    let end = selectedCells[selectedCells.length - 1];
+    let selectedWord = "";
+    let dir = directionBetween(start, end);
+
+    let cellsOnLine = getCellsBetween(start, end);
+
+    if(cellsOnLine.length !== selectedCells.length) return null;
+
+    for(let cell of selectedCells) {
+      if(!cellsOnLine.find(c => c.r === cell.r && c.c === cell.c)) return null;
+    }
+
+    for(let cell of selectedCells) {
+      selectedWord += grid[cell.r][cell.c];
+    }
+    return selectedWord;
+  }
+
+  // Mark a word as found
+  function markWordFound(wordToMark) {
+    const wordObj = placedWords.find(w => w.word === wordToMark || w.word === wordToMark.split('').reverse().join(''));
+    if(wordObj && !wordObj.found) {
+      wordObj.found = true;
+      // mark grid cells
+      const cellsToMark = getCellsBetween(wordObj.start, wordObj.end);
+      for(let cell of cellsToMark) {
+        let idx = cell.r * GRID_SIZE + cell.c;
+        let cellDiv = gridElement.children[idx];
+        cellDiv.classList.add('found');
+      }
+      // mark word in list
+      const wordDiv = document.getElementById(`word-${wordObj.word}`);
+      if(wordDiv) wordDiv.classList.add('found');
+      checkCompletion();
+      return true;
+    }
+    return false;
+  }
+
+  // Check if all words are found
+  function checkCompletion() {
+    if(placedWords.every(w => w.found)) {
+      messageElement.textContent = 'Parabéns! Você encontrou todas as palavras! 🎉';
+    } else {
+      messageElement.textContent = '';
+    }
+  }
+
+  // Interaction event handlers
+  function onCellMouseDown(e) {
+    isSelecting = true;
+    clearHighlighted();
+    selectedCells = [];
+
+    let cell = getCellFromEvent(e);
+    if(cell) {
+      selectedCells.push(cell);
+      highlightCells(selectedCells);
+    }
+  }
+
+  function onCellMouseMove(e) {
+    if(!isSelecting) return;
+
+    let cell = getCellFromEvent(e);
+    if(!cell) return;
+    // Only update when it is different from last selected
+    if(selectedCells.length > 0) {
+      let last = selectedCells[selectedCells.length - 1];
+      if(cell.r === last.r && cell.c === last.c) return;
+    }
+    // Check if selection is on line from first cell
+    let first = selectedCells[0];
+    let dir = directionBetween(first, cell);
+    if(selectedCells.length === 1) {
+      selectedCells.push(cell);
+      highlightCells(selectedCells);
+    } else {
+      // On longer selection enforce line
+      let expectedCells = getCellsBetween(first, cell);
+      selectedCells = expectedCells;
+      highlightCells(selectedCells);
+    }
+  }
+
+  function onCellMouseUp(e) {
+    if(!isSelecting) return;
+    isSelecting = false;
+
+    const selectedWord = checkSelectedWord();
+    if(selectedWord) {
+      const found = markWordFound(selectedWord.toUpperCase());
+      if(!found) {
+        // Mark selection red temporarily
+        highlightIncorrect(selectedCells);
+        messageElement.textContent = 'Palavra não encontrada. Tente novamente.';
+        setTimeout(() => {
+          messageElement.textContent = '';
+          clearHighlighted();
+        }, 1500);
+      } else {
+        messageElement.textContent = `Você encontrou a palavra "${selectedWord.toUpperCase()}"! 🎉`;
+        setTimeout(() => {
+          messageElement.textContent = '';
+          clearHighlighted();
+        }, 2000);
+      }
+    } else {
+      clearHighlighted();
+    }
+    selectedCells = [];
+  }
+
+  function getCellFromEvent(e) {
+    const target = e.target;
+    if(target.classList.contains('cell')) {
+      const r = parseInt(target.dataset.row);
+      const c = parseInt(target.dataset.col);
+      return {r,c};
+    }
+    return null;
+  }
+
+  // Highlight cells in selection
+  function highlightCells(cells) {
+    clearHighlighted();
+    for(let cell of cells) {
+      let idx = cell.r * GRID_SIZE + cell.c;
+      let div = gridElement.children[idx];
+      if(div && !div.classList.contains('found')) {
+        div.classList.add('highlighted');
+      }
+    }
+  }
+
+  // Highlight incorrect selection in red briefly
+  function highlightIncorrect(cells) {
+    for(let cell of cells) {
+      let idx = cell.r * GRID_SIZE + cell.c;
+      let div = gridElement.children[idx];
+      if(div && !div.classList.contains('found')) {
+        div.style.backgroundColor = '#f44336';
+        div.style.color = '#fff';
+        setTimeout(() => {
+          div.style.backgroundColor = '';
+          div.style.color = '';
+        }, 800);
+      }
+    }
+  }
+
+  // Clear highlighted
+  function clearHighlighted() {
+    document.querySelectorAll('.highlighted').forEach(el => {
+      el.classList.remove('highlighted');
+    });
+  }
+
+  // Initialization
+  function init() {
+    createEmptyGrid();
+
+    placedWords = [];
+    // Randomly sort and limit number of words to place based on grid size
+    const wordsToPlace = shuffle(words).slice(0, 18);
+
+    for(let w of wordsToPlace) {
+      const wordUpper = w.toUpperCase().normalize('NFD').replace(/\p{Diacritic}/gu, '');
+      if(!placeWord(wordUpper)) {
+        // Couldn't place word, omit it
+        // Or try to place again later if wanted
+      }
+    }
+    fillEmptyCells();
+    buildGrid();
+    buildWordsList();
+
+    // Setup event listeners for mouse & touch
+    gridElement.addEventListener('mousedown', onCellMouseDown);
+    gridElement.addEventListener('mousemove', onCellMouseMove);
+    window.addEventListener('mouseup', onCellMouseUp);
+
+    // For touch support:
+    gridElement.addEventListener('touchstart', e => {
+      e.preventDefault();
+      onCellMouseDown(e.touches[0]);
+    }, {passive: false});
+    gridElement.addEventListener('touchmove', e => {
+      e.preventDefault();
+      onCellMouseMove(e.touches[0]);
+    }, {passive: false});
+    window.addEventListener('touchend', e => {
+      e.preventDefault();
+      onCellMouseUp(e.changedTouches[0]);
+    }, {passive: false});
+
+    messageElement.textContent = 'Encontre as palavras relacionadas ao mundo de TI e desenvolvimento!';
+  }
+
+  init();
+
+</script>
+</body>
+</html>
